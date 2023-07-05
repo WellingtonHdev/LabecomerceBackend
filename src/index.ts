@@ -56,6 +56,47 @@ app.post("/products", (req: Request, res: Response) => {
     res.status(201).send(result);
 });
 
+app.delete("/users/:id", (req: Request, res: Response) => {
+    const idToDelete = req.params.id
+    const userIndex = users.findIndex((user) => user.id === idToDelete)
+
+    if (userIndex >= 0) {
+        users.splice(userIndex, 1)
+    }
+    res.status(200).send("Usuario deletado com sucesso!")
+});
+
+app.delete("/products/:id", (req: Request, res: Response) => {
+    const idToDelete = req.params.id
+    const productIndex = products.findIndex((product) => product.id === idToDelete)
+
+    if (productIndex >= 0) {
+        products.splice(productIndex, 1)
+    }
+    res.status(200).send("Produto deletado com sucesso!")
+});
+
+app.put("/products/:id", (req: Request, res: Response)=> {
+    const idToFind = req.params.id
+
+    const newId = req.body.id as string | undefined
+    const newName = req.body.name as string | undefined
+    const newPrice = req.body.price as number | undefined
+    const newDescription = req.body.description as string | undefined
+    const newImageUrl = req.body.imageUrl as string | undefined
+
+    const product = products.find((product)=> product.id === idToFind)
+
+    if(product){
+        product.id = newId || product.id
+        product.name = newName || product.name
+        product.price = newPrice ||product.price
+        product.description = newDescription || product.description
+        product.imageUrl = newImageUrl || product.imageUrl
+    }
+    res.status(200).send("Produto atualizados com sucesso!")
+})
+
 
 
 
