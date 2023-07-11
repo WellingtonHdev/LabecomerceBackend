@@ -90,7 +90,6 @@ app.post("/users", (req: Request, res: Response) => {
 
 app.post("/products", (req: Request, res: Response) => {
     try {
-
         const id = req.body.id as string
         const name = req.body.name as string
         const price = req.body.price as number
