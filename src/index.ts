@@ -2,6 +2,8 @@ import { createProduct, createUser, getAllProducts, getAllUsers, products, searc
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { error } from "console";
+import { db } from "./database/knex";
+import { TProducts, TUsers } from "./types";
 
 const app = express();
 
@@ -16,185 +18,320 @@ app.get("/ping", (req: Request, res: Response) => {
     res.send("Pong!");
 });
 
-app.get("/users", (req: Request, res: Response) => {
+app.get("/users", async (req: Request, res: Response) => {
     try {
-        res.status(200).send(users);
-    } catch (error) {
-        res.status(500).send("Error ao acessar o endpoint!")
+        const result: Array<TUsers> = await db.raw(`
+        SELECT * FROM users;
+      `)
+        res.status(200).send(result)
+    } catch (error: any) {
+        res.status(500).send("Error: erro ao acessar o endpoint")
     }
+})
 
-});
+app.get("/products", async (req: Request, res: Response) => {
 
-app.get("/products", (req: Request, res: Response) => {
     try {
-        const name = req.query.name as string
-
+        const name = req.query.name as string;
         if (name !== undefined) {
             if (name.length < 1) {
                 res.status(400)
-                throw new Error("O nome deve ter mais de 1 caracter")
+                throw new Error("O nome deve ter mais de 1 (UM) caracter")
             }
         }
+        const result: Array<TProducts> = await db.raw(`
+        SELECT * FROM products;
+      `)
         if (name) {
-            const result = searchProductsByName(name)
-            res.status(200).send(result);
+
+            const resultFiltered: Array<TProducts> = result.filter((product: TProducts) => product.name.toLocaleLowerCase().includes(name.toLocaleLowerCase()))
+            res.status(200).send(resultFiltered)
+            return
         }
-        res.send(products);
+        res.status(200).send(result)
 
-    } catch (Error: any) {
-        res.send(Error.message)
+    } catch (error: any) {
+        res.send(error.message)
     }
-});
+})
 
-app.post("/users", (req: Request, res: Response) => {
+app.post("/users", async (req: Request, res: Response) => {
     try {
-        const emailRegex = /\S+@\S+.\S+/;
+        const emailRegex = /\S+@\S+\.\S+/;
+
         const id = req.body.id as string
         const name = req.body.name as string
         const email = req.body.email as string
         const password = req.body.password as string
 
-        if (id.length < 4 || id[0] !== "u" || users.find(user => user.id === id)) {
-            res.status(400)
+        if (id.length < 4 || id[0] != "u") {
             if (id.length < 4) {
                 throw new Error("O id deve ter no minimo 4 caracteres")
-            } else if (id[0] !== "u") {
-                throw new Error("O id deve começar com a letra 'U")
             }
-            throw new Error("O id já existe")
+            throw new Error("O id deve começar com a letra 'U' ")
         }
-        if (!emailRegex.test(email) || users.find(user => user.email === email)) {
-            res.status(400)
-            if (!emailRegex.test(email)) {
-                throw new Error("Digite um email valido")
-            }
-            throw new Error("Email já existente, tente outro")
-        }
-        if (password.length < 8) {
-            res.status(400)
-            throw new Error("A senha deve ter no mínimo 8 caracteres")
-        }
+
         if (!name) {
-            res.status(400)
             throw new Error("Digite um name")
         }
 
-        const result = createUser(id, name, email, password)
+        if (!emailRegex.test(email)) {
+            throw new Error("Digite um email valido")
 
-        res.status(201).send(result);
+        }
 
-    } catch (Error: any) {
-        res.send(Error.message)
+        if (password.length < 8) {
+            throw new Error("A senha deve ter no mínimo 8 caracteres")
+        }
+
+        const [exist] = await db.raw(`
+        SELECT * FROM users
+        WHERE id = '${id}' OR email = '${email}'
+      `)
+
+        if (exist) {
+            if (exist.id === id) {
+                throw new Error("Id já existe, por favor altere as informações")
+            }
+            throw new Error("Email já existe, por favor altere as informações")
+        }
+
+        await db.raw(`
+        INSERT INTO users(id, name, email, password, createdAt)
+        VALUES ('${id}', '${name}', '${email}', '${password}', '${new Date().toISOString()}')
+      `)
+        res.status(201).send("Cadastro realizado com sucesso!")
+
+
+    } catch (error: any) {
+        res.status(400).send(error.message)
     }
-});
 
-app.post("/products", (req: Request, res: Response) => {
+
+})
+
+app.post("/products", async (req: Request, res: Response) => {
     try {
+
         const id = req.body.id as string
         const name = req.body.name as string
         const price = req.body.price as number
         const description = req.body.description as string
         const imageUrl = req.body.imageUrl as string
-        if (id.length < 7 || !id.startsWith("prod") || products.find(product => product.id === id)) {
-            res.status(400)
+
+        if (id.length < 7 || !id.startsWith("prod")) {
             if (id.length < 7) {
                 throw new Error("O id deve ter no minimo 7 caracteres, começando com 'prod' e os numeros em seguida")
-            } else if (!id.startsWith("prod")) {
-                throw new Error("O id deve começar sempre com a sigla 'prod'")
             }
-            throw new Error("O id já existe, tente outro")
+            throw new Error("O id deve começar sempre com a sigla 'prod'")
+
         }
         if (!name) {
-            res.status(400)
             throw new Error("Digite um name")
         }
         if (!price) {
-            res.status(400)
             throw new Error("Digite um price")
         }
         if (!description) {
-            res.status(400)
             throw new Error("Digite uma description")
         }
         if (!imageUrl) {
-            res.status(400)
             throw new Error("Digite uma imageUrl")
         }
 
-        const result = createProduct(id, name, price, description, imageUrl)
+        const [exist] = await db.raw(`
+        SELECT * FROM products
+        WHERE id = '${id}'
+      `)
 
-    } catch (Error: any) {
-        res.send(Error.message);
+        if (exist) {
+            throw new Error("Id já existe, por favor altere as informações")
+        }
+
+        await db.raw(`
+        INSERT INTO products (id, name, price, description, image_url)
+        VALUES ('${id}','${name}','${price}','${description}','${imageUrl}')
+      `)
+        res.status(201).send("Produto cadastrado com sucesso!")
+
+    } catch (error: any) {
+        res.status(400).send(error.message)
     }
-});
+
+})
+
+
+app.post("/purchases", async (req: Request, res: Response) => {
+    try {
+        const id = req.body.id as string
+        const buyerId = req.body.buyer as string
+        const totalPrice = req.body.totalPrice as number
+
+        if (id.length < 7 || !id.startsWith("purc")) {
+            if (id.length < 7) {
+                throw new Error("O id da compra deve ter no minimo 7 caracteres, começando com 'purc' e os numeros em seguida")
+            }
+            throw new Error("O id da compra deve começar sempre com a sigla 'purc'")
+
+        }
+
+        if (buyerId.length < 4 || !buyerId.startsWith("u")) {
+            if (buyerId.length < 4) {
+                throw new Error("O id do comprador deve ter no minimo 4 caracteres, começando com 'u' e os numeros em seguida")
+            }
+            throw new Error("O id do comprador deve começar sempre com a sigla 'u'")
+
+        }
+
+        if (!totalPrice) {
+            throw new Error("Por favor insira um preço total.")
+        }
+
+        const [exist] = await db.raw(`
+        SELECT * FROM purchases
+        WHERE id = '${id}'
+      `)
+
+        if (exist) {
+            throw new Error("Id já existe, por favor altere as informações")
+        }
+
+        await db.raw(`
+        INSERT INTO purchases(id, buyer, total_price, created_at)
+        VALUES('${id}', '${buyerId}', '${totalPrice}', '${new Date().toISOString()}')
+      `)
+        res.status(201).send("Pedido realizado com sucesso")
+    } catch (error: any) {
+        res.status(400).send(error.message)
+    }
+})
+
 
 app.delete("/users/:id", (req: Request, res: Response) => {
     try {
-
-        const idToDelete = req.params.id
-        const userIndex = users.findIndex((user) => user.id === idToDelete)
-
-        if (userIndex < 0) {
+        const id = req.params.id as string
+        const userToRemove = users.findIndex(user => user.id === id)
+        if (userToRemove < 0) {
             res.status(400)
             throw new Error("Esse usuario não existe")
         }
-        users.splice(userIndex, 1)
-        res.status(200).send("Usuario deletado com sucesso!")
-    } catch (Error: any) {
-        res.send(Error.message)
-
+        users.splice(userToRemove, 1)
+        res.status(200).send("User apagado com sucesso")
+    } catch (error: any) {
+        res.send(error.message)
     }
-});
+
+})
+
+
 
 app.delete("/products/:id", (req: Request, res: Response) => {
     try {
-
-        const idToDelete = req.params.id
-        const productIndex = products.findIndex((product) => product.id === idToDelete)
-
-        if (productIndex < 0) {
+        const id = req.params.id
+        const prodToRemove = products.findIndex(product => product.id === id)
+        if (prodToRemove < 0) {
             res.status(400)
             throw new Error("Esse produto não existe")
         }
-        products.splice(productIndex, 1)
-        res.status(200).send("Produto deletado com sucesso!")
-    } catch (Error: any) {
-        res.send(Error.message)
+        products.splice(prodToRemove, 1)
+        res.status(200).send("Produto apagado com sucesso")
+    } catch (error: any) {
+        res.send(error.message)
     }
-});
 
-app.put("/products/:id", (req: Request, res: Response) => {
+})
+
+
+app.put("/products/:id", async (req: Request, res: Response) => {
+
     try {
+        const idOfProduct = req.params.id as string
+        const newId = req.body.id as string || undefined
+        const newName = req.body.name as string || undefined
+        const newPrice = req.body.price as number || undefined
+        const newDescription = req.body.description as string || undefined
+        const newImageUrl = req.body.imageUrl as string || undefined
 
-        const idToFind = req.params.id
+        if (idOfProduct.length < 7 || !idOfProduct.startsWith("prod")) {
+            if (idOfProduct.length < 7) {
+                throw new Error("O ID do produto deve ter no minimo 7 caracteres e começar com a sigla 'prod'")
+            }
+            throw new Error("O ID do produto deve começar com a sigla 'prod'")
+        }
+        const [productToEdit] = await db.raw(`
+        SELECT * FROM products
+        WHERE id = '${idOfProduct}'
+      `)
 
-        const newId = req.body.id as string | undefined
-        const newName = req.body.name as string | undefined
-        const newPrice = req.body.price as number | undefined
-        const newDescription = req.body.description as string | undefined
-        const newImageUrl = req.body.imageUrl as string | undefined
-
-        const product = products.find((product) => product.id === idToFind)
-        if (!product) {
+        if (!productToEdit) {
             res.status(400)
             throw new Error("Esse produto não existe")
         }
 
-        if (!newId && !newName && !newPrice && !newDescription && !newImageUrl || newId === product.id && newName === product.name && newDescription === product.description && newImageUrl === product.imageUrl) {
+        if (!newId && !newName && !newPrice && !newDescription && !newImageUrl || newId === productToEdit.id && newName === productToEdit.name && newDescription === productToEdit.description && newImageUrl === productToEdit.image_url) {
             res.status(400)
             throw new Error("Para editar o produto é necessario alterar algma informação")
         }
 
+        if (newId) {
+            if (newId.length < 7 || !newId.startsWith("prod")) {
+                if (newId.length < 7) {
+                    throw new Error("O ID do produto deve ter no minimo 7 caracteres e começar com a sigla 'prod'")
+                }
+                throw new Error("O ID do produto deve começar com a sigla 'prod'")
+            }
+            const [exist] = await db.raw(`
+          SELECT * FROM products
+          WHERE id = '${newId}'
+        `)
+            if (exist && newId !== idOfProduct) {
+                throw new Error("O ID que você escolheu já está sendo utilizado, tente outro")
+            }
+        }
+        await db.raw(`
+        UPDATE products
+        SET
+        id = '${newId || productToEdit.id}',
+        name = '${newName || productToEdit.name}',
+        price = '${newPrice || productToEdit.price}',
+        description = '${newDescription || productToEdit.description}',
+        image_url = '${newImageUrl || productToEdit.image_url}'
+        WHERE id = '${productToEdit.id}'
+      `)
+        res.status(200).send("Produto atualizado com sucesso")
+    } catch (error: any) {
+        res.status(400).send(error.message)
+    }
+})
 
-        product.id = newId || product.id
-        product.name = newName || product.name
-        product.price = newPrice || product.price
-        product.description = newDescription || product.description
-        product.imageUrl = newImageUrl || product.imageUrl
+app.delete("/purchases/:id", async (req: Request, res: Response) => {
+    try {
+        const id = req.params.id as string
 
-        res.status(200).send("Produto atualizados com sucesso!")
-    } catch (Error: any) {
-        res.send(Error.message)
+        if (id.length < 7 || !id.startsWith("purc")) {
+            if (id.length < 7) {
+                throw new Error("O ID deve ter no minimo 7 caracteres e começar com a sigla 'purc'")
+            }
+            throw new Error("O ID deve começar com a sigla 'purc'")
+        }
+
+        const [exist] = await db.raw(`
+        SELECT * FROM purchases
+        WHERE id = '${id}'
+      `)
+
+        if (!exist) {
+            throw new Error("Pedido não existe")
+        }
+
+        await db.raw(`
+        DELETE FROM purchases
+        WHERE id = '${id}'
+      `)
+
+        res.status(200).send("Pedido cancelado com sucesso")
+    } catch (error: any) {
+        res.status(400).send(error.message)
     }
 })
 
